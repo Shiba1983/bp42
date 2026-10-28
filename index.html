@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101011">
+<title>Running Commu Check-in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+/* Layout: one narrow column like a race clipboard; tabs pinned to the bottom on phones, ink-inverted blocks for emphasis. */
+:root{
+  --paper:#f6f6f4; --ink:#101011; --ink-2:#5c5e62; --line:#d9d9d5; --tint:#ececE9; --card:#ffffff; --ok:#2d6b47;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0e0e0f; --ink:#f1f1ee; --ink-2:#9b9da1; --line:#2a2a2c; --tint:#19191b; --card:#151517; --ok:#7cc79a; color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#0e0e0f; --ink:#f1f1ee; --ink-2:#9b9da1; --line:#2a2a2c; --tint:#19191b; --card:#151517; --ok:#7cc79a; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:1001;background:var(--paper)}
+.wrap{max-width:720px;margin:0 auto;padding-block:16px 110px;display:flex;flex-direction:column;gap:20px}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--f-mono);font-size:12px;letter-spacing:.02em}
+.label{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+h1,h2,h3{margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:900;font-size:34px;line-height:.95;letter-spacing:.01em;text-transform:uppercase}
+h3{font-size:15px;font-weight:600}
+p{margin:0}
+.muted{color:var(--ink-2)}
+.small{font-size:13px}
+
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:10px}
+.brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+.brand b{font-family:var(--f-display);font-weight:900;font-size:28px;line-height:1;text-transform:uppercase;letter-spacing:.02em}
+.brand span{font-family:var(--f-mono);font-size:11px;color:var(--ink-2);letter-spacing:.1em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.store-pill{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:99px;padding:3px 9px;color:var(--ink-2);white-space:nowrap}
+.store-pill.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:1px}
+
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--paper);border-top:1px solid var(--line);
+  padding:6px max(16px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+nav.tabs button{background:none;border:0;padding:8px 2px;border-radius:var(--r);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-2)}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button span{font-family:var(--f-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+nav.tabs button[aria-current="page"]{background:var(--ink);color:var(--paper)}
+@media (min-width:760px){
+  nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);bottom:auto;border-top:0;border-bottom:1px solid var(--line);padding-inline:0}
+  .wrap{padding-bottom:40px}
+  nav.tabs button{flex-direction:row;justify-content:center;gap:8px}
+}
+
+main{display:flex;flex-direction:column;gap:30px}
+.section{display:flex;flex-direction:column;gap:12px}
+.sec-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:480px){.grid2{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=datetime-local],select{width:100%;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 11px;min-height:44px}
+input:focus,select:focus{border-color:var(--ink);outline:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:var(--r);border:1px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer;font-weight:500;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.sm{min-height:34px;padding:0 11px;font-size:13px}
+.btn.link{border:0;background:none;color:var(--ink-2);padding:0 6px;min-height:34px;text-decoration:underline;text-underline-offset:3px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.chips{display:flex;gap:4px;background:var(--tint);padding:3px;border-radius:calc(var(--r) + 3px);width:max-content;max-width:100%;overflow-x:auto}
+.chips button{border:0;background:none;padding:6px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.chips button[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.hr{height:1px;background:var(--line)}
+.banner{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:1px dashed var(--ink-2);border-radius:var(--r);padding:10px 12px;font-size:13px}
+.empty{border:1px dashed var(--line);border-radius:var(--r);padding:22px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:1002;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:var(--r);font-size:14px;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.18)}
+@media (min-width:760px){.toast{bottom:28px}}
+
+/* avatars: photos go greyscale to keep the page monochrome */
+.av{--s:36px;width:var(--s);height:var(--s);border-radius:50%;flex:none;display:inline-grid;place-items:center;overflow:hidden;background:var(--ink);color:var(--paper);
+  font-family:var(--f-display);font-weight:900;font-size:calc(var(--s) * .45);letter-spacing:.02em;line-height:1;border:2px solid var(--card)}
+.av img{width:100%;height:100%;object-fit:cover;filter:grayscale(1) contrast(1.05)}
+.av.lg{--s:64px}.av.xl{--s:84px}.av.sm{--s:28px}
+
+/* me card */
+.me{display:flex;gap:14px;align-items:center}
+.me .who{min-width:0;flex:1}
+.me .who b{font-size:18px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mystats{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}
+.mystats div{padding:10px 0;display:flex;flex-direction:column;gap:2px}
+.mystats div+div{padding-left:14px;border-left:1px solid var(--line)}
+.mystats b{font-family:var(--f-display);font-weight:900;font-size:40px;line-height:.9}
+
+/* NFC panel */
+.scan{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:18px}
+.scan .label{color:color-mix(in srgb,var(--paper) 65%,transparent)}
+.rings{width:112px;height:112px;position:relative;border:0;background:none;color:inherit;cursor:pointer;padding:0;border-radius:50%}
+.rings i{position:absolute;inset:0;border-radius:50%;border:1.5px solid currentColor;opacity:.35}
+.rings i:nth-child(2){inset:14px;opacity:.55}
+.rings i:nth-child(3){inset:28px;opacity:.8}
+.rings b{position:absolute;inset:40px;border-radius:50%;background:var(--paper);color:var(--ink);display:grid;place-items:center;font-family:var(--f-mono);font-size:11px;letter-spacing:.08em}
+.scanning .rings i{animation:pulse 2.2s ease-out infinite}
+.scanning .rings i:nth-child(2){animation-delay:.35s}
+.scanning .rings i:nth-child(3){animation-delay:.7s}
+@keyframes pulse{0%{transform:scale(.9);opacity:.9}100%{transform:scale(1.08);opacity:0}}
+@media (prefers-reduced-motion:reduce){.scanning .rings i{animation:none}}
+.scan-txt{display:flex;flex-direction:column;gap:6px;min-width:0}
+.scan-txt strong{font-family:var(--f-display);font-weight:900;font-size:30px;line-height:1;text-transform:uppercase}
+.scan-txt p{font-size:13px;opacity:.8}
+.scan .btn{background:var(--paper);color:var(--ink);border-color:var(--paper);align-self:flex-start;min-height:38px}
+@media (max-width:420px){.scan{grid-template-columns:1fr;justify-items:start}.rings{width:96px;height:96px}.rings b{inset:34px}}
+
+.cps{display:flex;flex-direction:column;gap:8px}
+.cp{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.cp.near{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.cp .main{min-width:0}
+.cp .main b{display:block}
+
+.lastlap{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;border:2px solid var(--ink);border-radius:10px;padding:14px 16px}
+.lastlap .big{font-family:var(--f-display);font-weight:900;font-size:56px;line-height:.85}
+.lastlap .who{min-width:0}
+.lastlap .who b{display:block;font-size:18px}
+
+.feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.feed li{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.feed li:last-child{border-bottom:0}
+.feed .w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed .d{font-family:var(--f-mono);font-size:12px;text-align:right;color:var(--ink-2)}
+
+/* leaderboard */
+.event-head{display:flex;flex-direction:column;gap:4px;border-top:2px solid var(--ink);padding-top:10px}
+.event-head b{font-size:18px}
+.totals{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line)}
+.totals div{padding:8px 0 12px;display:flex;flex-direction:column;gap:2px}
+.totals div+div{padding-left:14px;border-left:1px solid var(--line)}
+.totals b{font-family:var(--f-display);font-weight:900;font-size:40px;line-height:.9}
+.podium{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
+.bib{background:var(--card);border:1.5px solid var(--ink);border-radius:8px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;min-width:0}
+.bib::before,.bib::after{content:"";position:absolute;top:7px;width:6px;height:6px;border-radius:50%;border:1.5px solid var(--ink)}
+.bib::before{left:7px}.bib::after{right:7px}
+.bib .rk{font-family:var(--f-display);font-weight:900;line-height:.85;font-size:44px}
+.bib.p1{background:var(--ink);color:var(--paper)}
+.bib.p1::before,.bib.p1::after{border-color:var(--paper)}
+.bib.p1 .rk{font-size:60px}
+.bib.p1 .av{border-color:var(--ink);background:var(--paper);color:var(--ink)}
+.bib .nm{font-weight:600;font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bib .km{font-family:var(--f-mono);font-size:12px;opacity:.8;text-align:center}
+.board{width:100%;border-collapse:collapse}
+.board th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);font-weight:400;text-align:left;padding:6px;border-bottom:1px solid var(--ink)}
+.board td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.board td.r,.board th.r{text-align:right}
+.board .rk{font-family:var(--f-display);font-weight:900;font-size:22px;width:34px}
+.board .nm{display:flex;gap:10px;align-items:center;min-width:0}
+.board .nm b{display:block;font-weight:600}
+.board .nm small{color:var(--ink-2);font-size:12px}
+.board .km{font-family:var(--f-mono);font-weight:500}
+.board tr.mine td{background:var(--tint)}
+.board tr.mine td:first-child{box-shadow:inset 3px 0 0 var(--ink)}
+
+/* map */
+.mapbox{position:relative;border:1.5px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
+#mapEl,#sketch{display:block;width:100%;height:min(62vh,480px)}
+#sketch{touch-action:manipulation}
+.leaflet-container{background:var(--tint);font-family:var(--f-body)}
+.leaflet-tile-pane{filter:grayscale(1)}
+.leaflet-control-attribution{font-size:10px}
+.leaflet-div-icon{background:none;border:0}
+.pin-cp{width:16px;height:16px;background:var(--ink);border:2px solid var(--card);box-shadow:0 0 0 1.5px var(--ink)}
+.pin-lbl{position:absolute;left:50%;top:44px;transform:translateX(-50%);white-space:nowrap;background:var(--ink);color:var(--paper);font:600 12px var(--f-body);padding:2px 6px;border-radius:3px}
+.pin-run{position:relative}
+.pin-run .av{box-shadow:0 1px 6px rgba(0,0,0,.35)}
+.pin-run.me .av{border-color:var(--ink);outline:2px solid var(--card)}
+.pin-me{width:14px;height:14px;border-radius:50%;background:#2a6fdb;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,111,219,.2)}
+.map-tools{position:absolute;right:10px;bottom:10px;z-index:500;display:flex;gap:6px}
+.map-tools .btn{background:var(--card);color:var(--ink);box-shadow:0 1px 6px rgba(0,0,0,.2)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);align-items:center}
+.legend i{display:inline-block;vertical-align:-2px;margin-right:6px}
+.onmap{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.onmap button{display:flex;flex-direction:column;align-items:center;gap:4px;border:0;background:none;cursor:pointer;min-width:60px;padding:4px;border-radius:var(--r)}
+.onmap button span{font-size:12px;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* runner tab */
+.list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.list li .main{min-width:0;display:flex;gap:10px;align-items:center;flex:1}
+.list li .main>span:not(.av){min-width:0;display:flex;flex-direction:column}
+.list li .main b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list .stat{font-family:var(--f-mono);font-size:12px;text-align:right;white-space:nowrap}
+.tag{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink-2)}
+.tag.on{border-color:var(--ink);color:var(--ink)}
+.profile{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start;background:var(--card);border:1.5px solid var(--ink);border-radius:10px;padding:16px}
+.profile form{display:flex;flex-direction:column;gap:10px;min-width:0}
+.photo-btn{position:relative;border:0;background:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+.photo-btn small{font-size:12px;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px}
+@media (max-width:420px){.profile{grid-template-columns:1fr}}
+details.add{border:1px solid var(--line);border-radius:8px;background:var(--card)}
+details.add summary{cursor:pointer;padding:12px 14px;font-weight:600;list-style:none;display:flex;justify-content:space-between}
+details.add summary::-webkit-details-marker{display:none}
+details.add summary::after{content:"+";font-family:var(--f-mono)}
+details.add[open] summary::after{content:"–"}
+details.add .body{padding:0 14px 14px;display:flex;flex-direction:column;gap:14px}
+details.add form{display:flex;flex-direction:column;gap:10px}
+.inline-confirm{display:flex;gap:6px;align-items:center;font-size:13px}
+</style>
+
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand"><b>Running Commu</b><span id="eventLine">Lap check-in</span></div>
+    <span class="store-pill" id="storePill">Connecting…</span>
+  </header>
+  <div id="demoBanner" hidden class="banner"><span><b>Sample event.</b> These runners and laps are examples, and nothing you do here is saved.</span><button class="btn sm ghost" id="exitDemo">Leave sample</button></div>
+  <main id="view"></main>
+</div>
+
+<nav class="tabs" aria-label="Sections"><div class="in">
+  <button data-tab="checkin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 8.5a8 8 0 0 1 0 7M9.5 6a12 12 0 0 1 0 12M13 4a16 16 0 0 1 0 16"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/></svg><span>Check in</span></button>
+  <button data-tab="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V13h5v7M9.5 20V8h5v12M15 20v-9h5v9M3 20h18"/></svg><span>Leaderboard</span></button>
+  <button data-tab="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>Map</span></button>
+  <button data-tab="runner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="14.5" cy="4.5" r="2"/><path d="M8 21l3-6 3 2v4M6 12l3-4 4 1 2 4 3 1M11 15l2-6"/></svg><span>Runner</span></button>
+</div></nav>
+
+<input type="file" id="photoInput" accept="image/*" hidden>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const COLS = ["groups", "members", "checkpoints", "checkins", "event"];
+const COOLDOWN_MS = 45 * 1000;
+const DAY = 864e5;
+
+/* ---------- per-viewer prefs (convenience only) ---------- */
+const prefs = (() => {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem("rc2.prefs") || "{}"); } catch {}
+  return { get: (k, d) => (k in p ? p[k] : d), set: (k, v) => { p[k] = v; try { localStorage.setItem("rc2.prefs", JSON.stringify(p)); } catch {} } };
+})();
+
+/* ---------- store: Supabase when config.js is filled in, else this browser only ---------- */
+const CFG = window.RC_CONFIG || {};
+const blank = () => ({ groups: {}, members: {}, checkpoints: {}, checkins: {}, event: {} });
+const TABLE = { members: "profiles", groups: "groups", checkpoints: "checkpoints", checkins: "checkins", event: "events" };
+const iso = ms => (ms ? new Date(ms).toISOString() : null);
+const toRow = {
+  members: o => ({ id: o.id, name: o.name, group_id: o.groupId || null, photo: o.photo || null }),
+  groups: o => ({ id: o.id, name: o.name }),
+  checkpoints: o => ({ id: o.id, name: o.name, km: o.km, lat: o.lat ?? null, lng: o.lng ?? null, tag: o.tag || null }),
+  checkins: o => ({ id: o.id, member_id: o.memberId, checkpoint_id: o.checkpointId, km: o.km, lat: o.lat ?? null, lng: o.lng ?? null, acc: o.acc ?? null, via: o.via }),
+  event: o => ({ id: o.id, name: o.name, starts_at: iso(o.startsAt), ends_at: iso(o.endsAt) })
+};
+const fromRow = {
+  members: r => ({ id: r.id, name: r.name, groupId: r.group_id || "", photo: r.photo || "" }),
+  groups: r => ({ id: r.id, name: r.name }),
+  checkpoints: r => ({ id: r.id, name: r.name, km: +r.km, lat: r.lat, lng: r.lng, tag: r.tag || "" }),
+  checkins: r => ({ id: r.id, memberId: r.member_id, checkpointId: r.checkpoint_id, km: +r.km, ts: Date.parse(r.ts), lat: r.lat, lng: r.lng, acc: r.acc, via: r.via }),
+  event: r => ({ id: r.id, name: r.name, startsAt: Date.parse(r.starts_at), endsAt: r.ends_at ? Date.parse(r.ends_at) : null })
+};
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+const Store = {
+  mode: "local", ready: false, data: blank(), saved: null, sb: null, session: null, meId: null, admin: true, profiles: {}, recovery: false, channel: null,
+  async init() {
+    if (CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase) {
+      this.mode = "cloud"; this.admin = false;
+      this.sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
+      this.sb.auth.onAuthStateChange((ev, s) => {
+        if (ev === "PASSWORD_RECOVERY") { this.recovery = true; render(); }
+        if (s && (!this.session || s.user.id !== this.session.user.id)) { this.session = s; setTimeout(() => this.start(), 0); }
+        else if (!s && this.session) { this.session = null; this.meId = null; this.channel?.unsubscribe(); this.data = blank(); render(); }
+      });
+      const { data } = await this.sb.auth.getSession();
+      if (!data.session) { this.ready = true; render(); }
+    } else {
+      this.mode = "local";
+      try { const d = JSON.parse(localStorage.getItem("rc2.data") || "null"); if (d) this.data = Object.assign(blank(), d); } catch {}
+      this.meId = prefs.get("meId") || (() => { const id = newId(); prefs.set("meId", id); return id; })();
+      this.ready = true; render();
+    }
+  },
+  async start() {
+    this.meId = this.session.user.id; this.email = this.session.user.email || "";
+    this.myName = (this.email.split("@")[0] || "").replace(/[._-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    try { await this.loadAll(); } catch (e) { toast("Couldn't load the event: " + (e.message || "check your connection.")); }
+    this.ready = true; render();
+    this.channel?.unsubscribe();
+    this.channel = this.sb.channel("rc-live").on("postgres_changes", { event: "*", schema: "public" }, p => this.onChange(p)).subscribe();
+  },
+  async q(promise) { const { data, error } = await promise; if (error) throw error; return data; },
+  async loadAll() {
+    const sb = this.sb, d = blank();
+    const [profiles, groups, cps, events, admin] = await Promise.all([
+      this.q(sb.from("profiles").select("*")), this.q(sb.from("groups").select("*")), this.q(sb.from("checkpoints").select("*")),
+      this.q(sb.from("events").select("*").order("starts_at", { ascending: false }).limit(20)),
+      this.q(sb.from("admins").select("user_id").eq("user_id", this.meId))]);
+    profiles.forEach(r => d.members[r.id] = fromRow.members(r)); groups.forEach(r => d.groups[r.id] = fromRow.groups(r));
+    cps.forEach(r => d.checkpoints[r.id] = fromRow.checkpoints(r)); events.forEach(r => d.event[r.id] = fromRow.event(r));
+    this.admin = admin.length > 0;
+    this.data = Object.assign(this.data, d);
+    await this.loadCheckins();
+  },
+  async loadCheckins() {
+    const since = event()?.startsAt || 0, m = {};
+    const rows = await this.q(this.sb.from("checkins").select("*").gte("ts", iso(since) || "1970-01-01").order("ts", { ascending: false }).limit(5000));
+    rows.forEach(r => m[r.id] = fromRow.checkins(r)); this.data.checkins = m;
+  },
+  onChange(p) {
+    if (this.mode !== "cloud") return;
+    if (p.table === "admins") { this.sb.from("admins").select("user_id").eq("user_id", this.meId).then(({ data }) => { this.admin = !!data?.length; render(); }); return; }
+    const col = Object.keys(TABLE).find(k => TABLE[k] === p.table); if (!col) return;
+    if (p.eventType === "DELETE") delete this.data[col][p.old.id]; else this.data[col][p.new.id] = fromRow[col](p.new);
+    if (col === "event") this.loadCheckins().then(render, () => {}); else render();
+  },
+  persistLocal() { if (this.mode === "local") try { localStorage.setItem("rc2.data", JSON.stringify(this.data)); } catch { toast("This browser is out of space. Remove a photo and try again."); } },
+  async put(col, obj) {
+    obj.id = obj.id || newId();
+    const before = this.data[col][obj.id];
+    this.data[col][obj.id] = obj;
+    render();
+    if (this.mode === "cloud") {
+      try {
+        const t = this.sb.from(TABLE[col]);
+        const row = await this.q(col === "checkins" ? t.insert(toRow[col](obj)).select().single() : t.upsert(toRow[col](obj)).select().single());
+        this.data[col][row.id] = fromRow[col](row); render();
+        return this.data[col][row.id];
+      } catch (e) {
+        if (before) this.data[col][obj.id] = before; else delete this.data[col][obj.id];
+        render();
+        const msg = String(e?.message || "");
+        toast(/already checked in/i.test(msg) ? "You already checked in here a moment ago." : /row-level security|permission/i.test(msg) ? "Only an organiser can change that." : "Not saved: " + (msg || "try again."));
+        return null;
+      }
+    } else this.persistLocal();
+    return obj;
+  },
+  async remove(col, id) {
+    const before = this.data[col][id];
+    delete this.data[col][id];
+    render();
+    if (this.mode === "cloud") {
+      const { error } = await this.sb.from(TABLE[col]).delete().eq("id", id);
+      if (error) { this.data[col][id] = before; render(); toast("Not deleted: " + error.message); }
+    } else this.persistLocal();
+  },
+  enterDemo() { this.saved = { mode: this.mode, meId: this.meId, admin: this.admin, ...this.data }; this.mode = "demo"; this.data = makeSample(); this.meId = "me"; this.admin = true; render(); },
+  exitDemo() { const s = this.saved; this.mode = s.mode; this.meId = s.meId; this.admin = s.admin; this.data = { groups: s.groups, members: s.members, checkpoints: s.checkpoints, checkins: s.checkins, event: s.event }; this.saved = null; lastLap = null; render(); }
+};
+const all = c => Object.values(Store.data[c]);
+const me = () => Store.data.members[Store.meId];
+const event = () => all("event").sort((a, b) => b.startsAt - a.startsAt)[0] || null;
+const signedOut = () => Store.mode === "cloud" && !Store.session;
+
+/* ---------- sample event (demo mode only) ---------- */
+function makeSample() {
+  const d = blank();
+  const now = Date.now(), t0 = new Date(); t0.setHours(6, 0, 0, 0); let start = t0.getTime(); if (start > now - 30 * 60e3) start = now - 2 * 36e5;
+  d.event.e1 = { id: "e1", name: "Sunday 10K Social", startsAt: start };
+  [["g1", "Dawn Patrol"], ["g2", "Tempo Crew"], ["g3", "Sunday Long Run"]].forEach(([id, name]) => d.groups[id] = { id, name });
+  d.checkpoints.c1 = { id: "c1", name: "Lumpini Loop", km: 2.5, lat: 13.73135, lng: 100.54135, tag: "04:9f:02:aa:61:10:90" };
+  d.checkpoints.c2 = { id: "c2", name: "Benjakitti Loop", km: 1.8, lat: 13.72985, lng: 100.55740, tag: "04:9f:02:aa:61:11:90" };
+  const names = [["Ploy", "g1"], ["Krit", "g2"], ["Mina", "g1"], ["Arun", "g3"], ["Nok", "g2"], ["Ben", "g3"], ["Fah", ""], ["Tee", "g2"], ["Ice", "g3"], ["June", "g1"]];
+  names.forEach(([n, gid], i) => d.members["m" + i] = { id: "m" + i, name: n, groupId: gid });
+  d.members.me = { id: "me", name: "Sam", groupId: "g1" };
+  let seed = 20261027; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 20; i++) rnd();
+  let n = 0;
+  Object.values(d.members).forEach(m => {
+    const cp = rnd() < 0.6 ? d.checkpoints.c1 : d.checkpoints.c2, laps = m.id === "me" ? 2 : 1 + Math.floor(rnd() * 5);
+    let t = start + rnd() * 20 * 60e3;
+    for (let l = 0; l < laps; l++) {
+      t += cp.km * (300 + rnd() * 140) * 1000; if (t > now) break;
+      const id = "k" + n++;
+      d.checkins[id] = { id, memberId: m.id, checkpointId: cp.id, km: cp.km, ts: Math.round(t), lat: cp.lat + (rnd() - .5) * .0006, lng: cp.lng + (rnd() - .5) * .0006, via: "nfc" };
+    }
+  });
+  return d;
+}
+
+/* ---------- stats (current event only) ---------- */
+function eventCheckins() {
+  const ev = event(), s = ev?.startsAt || 0, e = ev?.endsAt || Infinity;
+  return all("checkins").filter(c => c.ts >= s && c.ts <= e);
+}
+function memberStats() {
+  const m = new Map();
+  for (const mem of all("members")) m.set(mem.id, { mem, laps: 0, km: 0, last: 0 });
+  for (const c of eventCheckins()) { const s = m.get(c.memberId); if (s) { s.laps++; s.km += +c.km || 0; s.last = Math.max(s.last, c.ts); } }
+  return [...m.values()].sort((a, b) => b.km - a.km || b.laps - a.laps || a.last - b.last || nameOf(a.mem).localeCompare(nameOf(b.mem)));
+}
+function groupStats() {
+  const g = new Map();
+  for (const gr of all("groups")) g.set(gr.id, { gr, laps: 0, km: 0, members: 0, active: 0 });
+  for (const s of memberStats()) { const x = g.get(s.mem.groupId); if (!x) continue; x.members++; x.laps += s.laps; x.km += s.km; if (s.laps) x.active++; }
+  return [...g.values()].sort((a, b) => b.km - a.km || b.laps - a.laps);
+}
+const fmtKm = k => (k >= 100 ? k.toFixed(0) : k.toFixed(1));
+const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+const fmtWhen = ts => { const d = new Date(ts), t = new Date(); t.setHours(0,0,0,0); return d >= t ? fmtTime(ts) : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + fmtTime(ts); };
+const groupName = id => Store.data.groups[id]?.name || "";
+const nameOf = m => (m?.name || "Runner");
+const normTag = s => String(s || "").trim().toLowerCase().replace(/[^0-9a-f]/g, "").replace(/(..)(?!$)/g, "$1:");
+const distM = (a, b) => { const R = 6371e3, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+const fmtDist = m => m < 1000 ? Math.round(m / 10) * 10 + " m" : (m / 1000).toFixed(1) + " km";
+const hasLoc = o => o && Number.isFinite(+o.lat) && Number.isFinite(+o.lng) && !(+o.lat === 0 && +o.lng === 0);
+
+const initials = m => nameOf(m).trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+function avatar(m, cls = "") {
+  const photo = m?.photo || "";
+  const ini = initials(m);
+  return `<span class="av ${cls}" aria-hidden="true">${photo ? `<img src="${esc(photo)}" alt="">` : esc(ini)}</span>`;
+}
+
+/* ---------- GPS ---------- */
+const gps = { pos: null, err: "", watching: false };
+function getPosition(timeout = 4000) {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    try {
+      navigator.geolocation.getCurrentPosition(p => { gps.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, ts: Date.now() }; gps.err = ""; res(gps.pos); },
+        e => { gps.err = e.code === 1 ? "Location is off for this page." : "Couldn't get your location."; res(null); }, { enableHighAccuracy: true, timeout, maximumAge: 30000 });
+    } catch { res(null); }
+  });
+}
+
+/* ---------- check-in ---------- */
+let lastLap = null;
+async function checkIn(cpId, via) {
+  const m = me(), cp = Store.data.checkpoints[cpId];
+  if (!m) { toast("Join the event first, then check in."); return; }
+  if (!cp) return;
+  const recent = all("checkins").find(c => c.memberId === m.id && c.checkpointId === cpId && Date.now() - c.ts < COOLDOWN_MS);
+  if (recent) { toast(`You already checked in at ${cp.name} a moment ago.`); buzz([40, 60, 40]); return; }
+  const pos = gps.pos && Date.now() - gps.pos.ts < 60e3 ? gps.pos : await getPosition(3000);
+  const rec = { memberId: m.id, checkpointId: cpId, km: +cp.km, ts: Date.now(), via };
+  if (pos) Object.assign(rec, { lat: pos.lat, lng: pos.lng, acc: Math.round(pos.acc || 0) });
+  else if (hasLoc(cp)) Object.assign(rec, { lat: +cp.lat, lng: +cp.lng });
+  await Store.put("checkins", rec);
+  const mine = eventCheckins().filter(c => c.memberId === m.id);
+  const rank = memberStats().findIndex(s => s.mem.id === m.id) + 1;
+  lastLap = { cp: cp.name, lap: mine.length, km: mine.reduce((s, c) => s + (+c.km || 0), 0), rank, ts: Date.now() };
+  buzz(120); render();
+}
+function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch {} }
+
+/* ---------- NFC (Web NFC: Chrome on Android over HTTPS) ---------- */
+const nfc = { supported: "NDEFReader" in window, active: false, abort: null, err: "", pendingField: null };
+async function startNfc() {
+  if (!nfc.supported) { toast("This browser can't read NFC. Use Chrome on Android, or check in with the buttons below."); return; }
+  try {
+    const reader = new NDEFReader(); nfc.abort = new AbortController();
+    await reader.scan({ signal: nfc.abort.signal });
+    reader.onreading = e => onTag(e.serialNumber, e.message);
+    reader.onreadingerror = () => toast("Couldn't read that tag. Hold it still against the back of the phone.");
+    nfc.active = true; nfc.err = ""; prefs.set("nfcOn", true);
+  } catch (e) {
+    nfc.active = false;
+    nfc.err = e?.name === "NotAllowedError" ? "NFC permission was refused. Allow NFC for this site in Chrome settings." : e?.name === "NotSupportedError" ? "NFC is off or missing on this phone. Turn it on in Android settings." : "NFC couldn't start here. Open the app from its own web address in Chrome on Android.";
+  }
+  render();
+}
+function stopNfc() { try { nfc.abort?.abort(); } catch {} nfc.active = false; prefs.set("nfcOn", false); render(); }
+function onTag(serial, message) {
+  let id = normTag(serial);
+  // a tag may also carry a text record "rc:cp:<checkpoint id>"
+  try { for (const rec of message?.records || []) if (rec.recordType === "text") { const t = new TextDecoder(rec.encoding || "utf-8").decode(rec.data); if (t.startsWith("rc:")) id = t; } } catch {}
+  handleTagId(id, "nfc");
+}
+let unknownTag = null;
+function handleTagId(id, via) {
+  if (!id) return;
+  if (nfc.pendingField) { const f = $("#" + nfc.pendingField); if (f) f.value = id; nfc.pendingField = null; toast("Tag captured: " + id); render(); return; }
+  const cp = id.startsWith("rc:cp:") ? Store.data.checkpoints[id.slice(6)] : all("checkpoints").find(c => c.tag && normTag(c.tag) === id);
+  if (cp) checkIn(cp.id, via);
+  else { unknownTag = id; buzz([30, 40, 30]); tab = "checkin"; render(); }
+}
+
+/* ---------- photo ---------- */
+function pickPhoto() { $("#photoInput").value = ""; $("#photoInput").click(); }
+$("#photoInput").addEventListener("change", e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => {
+    const s = 128, c = document.createElement("canvas"); c.width = c.height = s;
+    const k = Math.max(s / img.width, s / img.height), w = img.width * k, h = img.height * k;
+    c.getContext("2d").drawImage(img, (s - w) / 2, (s - h) / 2, w, h); URL.revokeObjectURL(url);
+    draftPhoto = c.toDataURL("image/jpeg", 0.8);
+    const m = me(); if (m) { Store.put("members", { ...m, photo: draftPhoto }); toast("Photo updated."); draftPhoto = null; } else render();
+  };
+  img.onerror = () => toast("That file isn't an image this browser can open.");
+  img.src = url;
+});
+let draftPhoto = null;
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3400); }
+
+/* ---------- views ---------- */
+const TABS = ["checkin", "board", "map", "runner"];
+let tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : prefs.get("tab", "checkin");
+if (!TABS.includes(tab)) tab = "checkin";
+let boardKind = "runners", confirmDel = null, focusRunner = null;
+
+function render() {
+  const pill = $("#storePill");
+  pill.className = "store-pill" + (Store.ready && Store.mode === "cloud" && Store.session ? " live" : "");
+  pill.textContent = !Store.ready ? "Connecting…" : Store.mode === "cloud" ? (Store.session ? "Live" : "Signed out") : Store.mode === "demo" ? "Sample" : "This device";
+  $("#eventLine").textContent = event()?.name || "Lap check-in";
+  $("#demoBanner").hidden = Store.mode !== "demo";
+  $("nav.tabs").hidden = signedOut() || Store.recovery;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === tab ? "page" : "false"));
+  const v = $("#view");
+  const focusId = document.activeElement?.id, vals = {}, openD = new Set();
+  v.querySelectorAll("[data-dirty]").forEach(el => vals[el.id] = el.value);
+  v.querySelectorAll("details[id][open]").forEach(d => openD.add(d.id));
+  if (mapState.el && mapState.el.isConnected) mapState.el.remove();
+  v.innerHTML = Store.recovery ? viewNewPassword() : signedOut() ? viewAuth() : { checkin: viewCheckin, board: viewBoard, map: viewMap, runner: viewRunner }[tab]();
+  for (const [id, val] of Object.entries(vals)) { const el = document.getElementById(id); if (el) { el.value = val; el.dataset.dirty = ""; } }
+  openD.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
+  if (focusId) document.getElementById(focusId)?.focus?.();
+  if (tab === "map" && !signedOut()) mountMap();
+}
+
+
+let authMode = "signin", authBusy = false, authNote = "";
+function viewAuth() {
+  if (!Store.ready) return `<section class="section"><p class="muted">Loading…</p></section>`;
+  const up = authMode === "signup";
+  return `<section class="section">
+    <h2>${up ? "Create your runner account" : "Sign in"}</h2>
+    <p class="muted">${up ? "One account per runner. Your laps and kilometres are saved to it." : "Sign in to check in and see the leaderboard."}</p>
+    <form data-form="auth" class="profile" style="grid-template-columns:1fr">
+      <label class="field"><span class="label">Email</span><input type="email" id="aEmail" required autocomplete="email" inputmode="email"></label>
+      <label class="field"><span class="label">Password</span><input type="password" id="aPass" required minlength="6" autocomplete="${up ? "new-password" : "current-password"}"></label>
+      ${authNote ? `<p class="small">${esc(authNote)}</p>` : ""}
+      <div class="row"><button class="btn" type="submit" ${authBusy ? "disabled" : ""}>${up ? "Create account" : "Sign in"}</button>
+        <button type="button" class="btn link" data-act="auth-toggle">${up ? "I already have an account" : "New here? Create an account"}</button></div>
+      ${up ? "" : `<button type="button" class="btn link" style="align-self:flex-start" data-act="auth-reset">Forgot password</button>`}
+    </form>
+    <div class="banner"><span>Want to look around first?</span><button class="btn sm ghost" data-act="demo">Preview with sample data</button></div>
+  </section>`;
+}
+function viewNewPassword() {
+  return `<section class="section"><h2>Set a new password</h2>
+    <form data-form="newpass" class="profile" style="grid-template-columns:1fr">
+      <label class="field"><span class="label">New password</span><input type="password" id="nPass" required minlength="6" autocomplete="new-password"></label>
+      <button class="btn" type="submit">Save password</button></form></section>`;
+}
+
+function joinCard() {
+  const groups = all("groups").sort((a, b) => a.name.localeCompare(b.name));
+  const nm = Store.myName || "";
+  return `<div class="profile">
+    <button type="button" class="photo-btn" data-act="photo">${draftPhoto ? `<span class="av xl"><img src="${draftPhoto}" alt=""></span>` : `<span class="av xl">+</span>`}<small>Add photo</small></button>
+    <form data-form="join"><h3>Join ${esc(event()?.name || "the event")}</h3>
+      <p class="muted small">Your laps and kilometres are saved to this profile. Only your name is needed.</p>
+      <label class="field"><span class="label">Your name</span><input type="text" id="jName" required maxlength="30" value="${esc(nm)}"></label>
+      ${groups.length ? `<label class="field"><span class="label">Group (optional)</span><select id="jGroup"><option value="">No group</option>${groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}</select></label>` : ""}
+      <button class="btn" type="submit">Join and start checking in</button></form></div>`;
+}
+
+function setupHint() {
+  return `<div class="empty"><h3>No checkpoints yet</h3><p class="muted">${Store.admin ? "Add the checkpoint where runners tap their phones, with its lap distance, in the Runner tab under Event setup." : "The organiser hasn't added a checkpoint yet. Check back soon."}</p>
+  <div class="row">${Store.admin ? `<button class="btn" data-go="runner">Set up the event</button>` : ""}${Store.mode !== "demo" ? `<button class="btn ghost" data-act="demo">Preview with sample data</button>` : ""}</div></div>`;
+}
+
+function viewCheckin() {
+  const m = me();
+  if (!Store.ready) return `<section class="section"><h2>Check in</h2><p class="muted">Loading the event…</p></section>`;
+  if (!m) return `<section class="section"><h2>Check in</h2>${joinCard()}${!all("checkpoints").length && Store.mode !== "demo" ? `<div class="banner"><span>Want to see how it works first?</span><button class="btn sm ghost" data-act="demo">Preview with sample data</button></div>` : ""}</section>`;
+  const cps = all("checkpoints");
+  const stats = memberStats(), myI = stats.findIndex(s => s.mem.id === m.id), mine = stats[myI];
+  const ranked = stats.filter(s => s.laps).length;
+  const status = nfc.active ? "Tap the checkpoint tag" : nfc.supported ? "Ready to scan" : "Tap-in not available";
+  const sub = nfc.active ? "Hold the back of your phone to the tag at the checkpoint. Each tap is one lap."
+    : nfc.err || (nfc.supported ? "Start scanning, then tap your phone on the checkpoint tag." : "NFC tap-in works in Chrome on Android. Here, check in with the buttons below.");
+  let list = cps.map(c => ({ c, d: gps.pos && hasLoc(c) ? distM(gps.pos, { lat: +c.lat, lng: +c.lng }) : null }));
+  if (gps.pos) list.sort((a, b) => (a.d ?? 1e12) - (b.d ?? 1e12)); else list.sort((a, b) => a.c.name.localeCompare(b.c.name));
+  const nearId = gps.pos && list[0]?.d != null && list[0].d < 300 ? list[0].c.id : null;
+  const recent = eventCheckins().sort((a, b) => b.ts - a.ts).slice(0, 8);
+  return `
+  <section class="section">
+    <div class="me">${avatar(m, "lg")}<div class="who"><span class="label">Checking in as</span><b>${esc(nameOf(m))}</b><span class="muted small">${esc(groupName(m.groupId) || "No group")}</span></div></div>
+    <div class="mystats"><div><span class="label">Laps</span><b class="num">${mine?.laps || 0}</b></div><div><span class="label">Kilometres</span><b class="num">${fmtKm(mine?.km || 0)}</b></div><div><span class="label">Place</span><b class="num">${mine?.laps ? myI + 1 : "–"}</b>${mine?.laps ? `<span class="muted small">of ${ranked}</span>` : ""}</div></div>
+  </section>
+  ${!cps.length ? `<section class="section">${setupHint()}</section>` : `
+  <section class="section">
+    <div class="scan ${nfc.active ? "scanning" : ""}">
+      <button class="rings" data-act="${nfc.active ? "nfc-stop" : "nfc-start"}" aria-label="${nfc.active ? "Stop scanning" : "Start scanning"}"><i></i><i></i><i></i><b>NFC</b></button>
+      <div class="scan-txt"><span class="label">${nfc.active ? "Scanning" : "Tap in"}</span><strong>${status}</strong><p>${esc(sub)}</p>
+        ${nfc.supported ? `<button class="btn sm" data-act="${nfc.active ? "nfc-stop" : "nfc-start"}">${nfc.active ? "Stop scanning" : "Start scanning"}</button>` : ""}</div>
+    </div>
+    ${unknownTag ? `<div class="banner"><span>That tag <span class="mono">${esc(unknownTag)}</span> isn't a checkpoint.</span>
+      ${Store.admin ? `<span class="row"><select id="linkTag" style="width:auto;min-height:36px;padding:4px 8px"><option value="">Make it the tag for…</option>${cps.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select><button class="btn sm" data-act="link-tag">Link</button></span>` : ""}
+      <button class="btn link" data-act="dismiss-tag">Dismiss</button></div>` : ""}
+    ${lastLap && Date.now() - lastLap.ts < 5 * 60e3 ? `<div class="lastlap" aria-live="polite"><div class="big num">${lastLap.lap}</div>
+      <div class="who"><span class="label">Lap ${lastLap.lap} · ${esc(lastLap.cp)}</span><b>Checked in at ${fmtTime(lastLap.ts)}</b><span class="muted small">${lastLap.rank ? "You're in place " + lastLap.rank : ""}</span></div>
+      <div style="text-align:right"><span class="label">Total</span><div class="mono" style="font-size:18px">${fmtKm(lastLap.km)} km</div></div></div>` : ""}
+  </section>
+  <section class="section">
+    <div class="sec-head"><h3>${nfc.active ? "No tag? Check in here" : "Check in at"}</h3><button class="btn link" data-act="locate">${gps.pos ? "Update my location" : "Find the nearest"}</button></div>
+    ${gps.err ? `<p class="muted small">${esc(gps.err)} The buttons still work.</p>` : ""}
+    <div class="cps">${list.map(({ c, d }) => `<div class="cp ${c.id === nearId ? "near" : ""}"><span class="main"><b>${esc(c.name)}</b><span class="muted small">${c.km} km lap${d != null ? " · " + fmtDist(d) + " away" : ""}${c.id === nearId ? " · nearest" : ""}</span></span>
+      <button class="btn ${c.id === nearId ? "" : "ghost"} sm" data-checkin="${c.id}">Check in</button></div>`).join("")}</div>
+    <p class="muted small">A second check-in at the same checkpoint within 45 seconds is ignored.</p>
+  </section>`}
+  <section class="section">
+    <div class="sec-head"><h3>Latest laps</h3><span class="label">${eventCheckins().length} this event</span></div>
+    ${recent.length ? `<ul class="feed">${recent.map(c => { const r = Store.data.members[c.memberId], p = Store.data.checkpoints[c.checkpointId];
+      return `<li>${avatar(r, "sm")}<span class="w"><b>${esc(r ? nameOf(r) : "Removed runner")}</b> <span class="muted">· ${esc(p?.name || "removed checkpoint")}</span></span><span class="d">${fmtTime(c.ts)} · +${(+c.km).toFixed(1)} km</span></li>`; }).join("")}</ul>`
+      : `<p class="muted">No laps yet. The first check-in shows up here.</p>`}
+  </section>`;
+}
+
+function eventHead() {
+  const ev = event();
+  return `<div class="event-head"><span class="label">Event</span><b>${esc(ev?.name || "Running Commu")}</b><span class="muted small">${ev?.startsAt ? "Started " + fmtWhen(ev.startsAt) : "All check-ins count"}${ev?.endsAt ? " · ends " + fmtWhen(ev.endsAt) : ""}</span></div>`;
+}
+
+function viewBoard() {
+  if (!all("members").length) return `<section class="section"><h2>Leaderboard</h2>${eventHead()}<div class="empty"><h3>Nobody has joined yet</h3><p class="muted">Runners appear here once they join on the Check in tab.</p>${Store.mode !== "demo" ? `<button class="btn ghost" data-act="demo">Preview with sample data</button>` : ""}</div></section>`;
+  const cs = eventCheckins(), totKm = cs.reduce((s, c) => s + (+c.km || 0), 0), active = new Set(cs.map(c => c.memberId)).size;
+  const hasGroups = all("groups").length > 0; if (!hasGroups) boardKind = "runners";
+  const kinds = hasGroups ? `<div class="chips" role="group" aria-label="Show">${[["runners", "Runners"], ["groups", "Groups"]].map(([k, l]) => `<button data-kind="${k}" aria-pressed="${k === boardKind}">${l}</button>`).join("")}</div>` : "";
+  let body;
+  if (boardKind === "runners") {
+    const ms = memberStats(), top = ms.filter(s => s.laps).slice(0, 3), order = top.length === 3 ? [1, 0, 2] : top.map((_, i) => i);
+    body = `${top.length ? `<div class="podium">${order.map(i => { const s = top[i]; return `<div class="bib p${i + 1}"><div class="rk">${i + 1}</div>${avatar(s.mem, i === 0 ? "lg" : "")}<div class="nm">${esc(nameOf(s.mem))}</div><div class="km num">${fmtKm(s.km)} km<br>${s.laps} lap${s.laps === 1 ? "" : "s"}</div></div>`; }).join("")}</div>` : ""}
+    <div style="overflow-x:auto"><table class="board"><thead><tr><th>#</th><th>Runner</th><th class="r">Laps</th><th class="r">km</th></tr></thead><tbody>
+    ${ms.map((s, i) => `<tr class="${s.mem.id === Store.meId ? "mine" : ""}"><td class="rk num">${s.laps ? i + 1 : "–"}</td><td><div class="nm">${avatar(s.mem, "sm")}<span><b>${esc(nameOf(s.mem))}${s.mem.id === Store.meId ? " (you)" : ""}</b>${groupName(s.mem.groupId) ? `<small>${esc(groupName(s.mem.groupId))}</small>` : ""}</span></div></td>
+      <td class="r num">${s.laps}</td><td class="r km num">${fmtKm(s.km)}</td></tr>`).join("")}
+    </tbody></table></div>`;
+  } else {
+    const gs = groupStats();
+    body = `<div style="overflow-x:auto"><table class="board"><thead><tr><th>#</th><th>Group</th><th class="r">Laps</th><th class="r">km</th><th class="r">Avg km</th></tr></thead><tbody>
+    ${gs.map((g, i) => `<tr class="${g.gr.id === me()?.groupId ? "mine" : ""}"><td class="rk num">${g.laps ? i + 1 : "–"}</td><td><b>${esc(g.gr.name)}</b><br><small class="muted">${g.active} of ${g.members} running</small></td>
+      <td class="r num">${g.laps}</td><td class="r km num">${fmtKm(g.km)}</td><td class="r num">${g.members ? fmtKm(g.km / g.members) : "–"}</td></tr>`).join("")}
+    </tbody></table></div><p class="muted small">Runners without a group still count on the runners board.</p>`;
+  }
+  return `<section class="section">
+    <div class="sec-head"><h2>Leaderboard</h2>${kinds}</div>
+    ${eventHead()}
+    <div class="totals"><div><span class="label">Kilometres</span><b class="num">${fmtKm(totKm)}</b></div><div><span class="label">Laps</span><b class="num">${cs.length}</b></div><div><span class="label">Runners</span><b class="num">${active}</b></div></div>
+    ${body}</section>`;
+}
+
+/* ---------- map: real tiles when the host allows them, otherwise a drawn plan ---------- */
+const mapState = { el: null, map: null, layer: null, tiles: null, mode: null, tileOk: false, tileErr: 0, meMarker: null, fitted: false, imgs: {} };
+function runnerSpots() {
+  // each runner's latest check-in in this event, with GPS where it was given
+  const last = {};
+  for (const c of eventCheckins()) if (!last[c.memberId] || c.ts > last[c.memberId].ts) last[c.memberId] = c;
+  // GPS within 80 m of the checkpoint snaps to it, so the crowd there forms one ring of faces
+  return Object.values(last).map(c => { const cp = Store.data.checkpoints[c.checkpointId];
+    const atCp = hasLoc(cp) && (!hasLoc(c) || distM({ lat: +c.lat, lng: +c.lng }, { lat: +cp.lat, lng: +cp.lng }) < 80);
+    const loc = atCp ? cp : hasLoc(c) ? c : null;
+    return loc ? { m: Store.data.members[c.memberId], lat: +loc.lat, lng: +loc.lng, ts: c.ts, cp, key: atCp ? "cp:" + cp.id : (+loc.lat).toFixed(4) + "," + (+loc.lng).toFixed(4), ring: atCp } : null; }).filter(x => x && x.m);
+}
+function viewMap() {
+  const cps = all("checkpoints");
+  if (!cps.length) return `<section class="section"><h2>Map</h2>${setupHint()}</section>`;
+  const spots = runnerSpots().sort((a, b) => b.ts - a.ts);
+  const noLoc = cps.filter(c => !hasLoc(c));
+  return `<section class="section">
+    <div class="sec-head"><h2>Map</h2><span class="label">${spots.length} runner${spots.length === 1 ? "" : "s"} on the map</span></div>
+    <div class="mapbox"><div id="mapSlot"></div><div class="map-tools"><button class="btn sm" data-act="map-locate">My location</button><button class="btn sm" data-act="map-fit">Show all</button></div></div>
+    <div class="legend"><span><i class="pin-cp" style="width:12px;height:12px"></i>Checkpoint</span><span><i class="av sm" style="--s:18px;font-size:8px">R</i>Runner, where they last checked in</span>${gps.pos ? `<span><i class="pin-me" style="width:12px;height:12px;border-width:2px;box-shadow:none"></i>You now</span>` : ""}</div>
+    ${mapState.mode === "sketch" ? `<p class="muted small">The street map couldn't load, so this is a drawn plan with a 100 m grid. Check your connection and reopen the Map tab.</p>` : ""}
+    ${noLoc.length ? `<p class="muted small">${noLoc.map(c => esc(c.name)).join(", ")} ${noLoc.length === 1 ? "has" : "have"} no location yet${Store.admin ? ", so add it in the Runner tab" : ""}.</p>` : ""}
+    ${spots.length ? `<div class="onmap" aria-label="Runners on the map">${spots.map(s => `<button data-focus="${s.m.id}">${avatar(s.m)}<span>${esc(nameOf(s.m))}</span><span class="mono muted">${fmtTime(s.ts)}</span></button>`).join("")}</div>` : `<p class="muted">Runners appear on the map after their first check-in.</p>`}
+  </section>`;
+}
+function mountMap() {
+  const slot = $("#mapSlot"); if (!slot) return;
+  if (!mapState.mode) mapState.mode = window.L ? "tiles" : "sketch";
+  if (mapState.mode === "tiles") {
+    if (!mapState.el) {
+      mapState.el = document.createElement("div"); mapState.el.id = "mapEl";
+      slot.replaceWith(mapState.el);
+      const map = mapState.map = L.map(mapState.el, { zoomControl: true, attributionControl: true });
+      const dark = getComputedStyle(document.documentElement).colorScheme === "dark";
+      mapState.tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, { maxZoom: 20, subdomains: "abcd", attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
+      mapState.tiles.on("tileload", () => mapState.tileOk = true);
+      mapState.tiles.on("tileerror", () => { if (!mapState.tileOk && ++mapState.tileErr >= 4) { map.remove(); mapState.el = null; mapState.map = null; mapState.mode = "sketch"; render(); } });
+      mapState.layer = L.layerGroup().addTo(map);
+    } else slot.replaceWith(mapState.el);
+    setTimeout(() => mapState.map?.invalidateSize(), 0);
+    drawLeaflet();
+  } else {
+    const cv = document.createElement("canvas"); cv.id = "sketch"; slot.replaceWith(cv); drawSketch();
+  }
+}
+function pinHtml(m, extra = "") { return `<div class="pin-run ${m.id === Store.meId ? "me" : ""} ${extra}">${avatar(m, m.id === Store.meId ? "" : "sm")}</div>`; }
+function fanOffsets(spots) {
+  // runners at the same spot fan out around it so every face stays visible
+  const groups = {}; spots.forEach(s => (groups[s.key] = groups[s.key] || []).push(s));
+  for (const g of Object.values(groups)) {
+    g.sort((a, b) => (a.m.id === Store.meId) - (b.m.id === Store.meId));
+    g.forEach((s, i) => { if (g.length === 1 && !s.ring) { s.dx = 0; s.dy = 0; return; }
+      const a = (i / g.length) * Math.PI * 2 - Math.PI / 2, r = Math.max(26, g.length * 5.5); s.dx = Math.cos(a) * r; s.dy = Math.sin(a) * r; });
+  }
+  return spots;
+}
+function drawLeaflet() {
+  const { map, layer } = mapState; if (!map) return;
+  layer.clearLayers();
+  const pts = [];
+  for (const c of all("checkpoints").filter(hasLoc)) {
+    pts.push([+c.lat, +c.lng]);
+    L.marker([+c.lat, +c.lng], { icon: L.divIcon({ className: "", html: `<div class="pin-cp"></div><span class="pin-lbl">${esc(c.name)} · ${c.km} km</span>`, iconSize: [16, 16], iconAnchor: [8, 8] }), zIndexOffset: -100 }).addTo(layer);
+  }
+  for (const s of fanOffsets(runnerSpots())) {
+    pts.push([s.lat, s.lng]);
+    const size = s.m.id === Store.meId ? 36 : 28;
+    L.marker([s.lat, s.lng], { icon: L.divIcon({ className: "", html: pinHtml(s.m), iconSize: [size, size], iconAnchor: [size / 2 - s.dx, size / 2 - s.dy] }), zIndexOffset: s.m.id === Store.meId ? 1000 : 0, title: nameOf(s.m) })
+      .bindTooltip(`${esc(nameOf(s.m))} · ${esc(s.cp?.name || "")} at ${fmtTime(s.ts)}`).addTo(layer);
+  }
+  if (gps.pos) { pts.push([gps.pos.lat, gps.pos.lng]); L.marker([gps.pos.lat, gps.pos.lng], { icon: L.divIcon({ className: "", html: `<div class="pin-me"></div>`, iconSize: [14, 14], iconAnchor: [7, 7] }), zIndexOffset: 2000 }).addTo(layer); }
+  if (focusRunner) { const s = runnerSpots().find(x => x.m.id === focusRunner); focusRunner = null; if (s) { map.setView([s.lat, s.lng], 18); return; } }
+  if (!mapState.fitted && pts.length) { mapState.fitted = true; if (pts.length === 1) map.setView(pts[0], 17); else map.fitBounds(pts, { padding: [40, 40], maxZoom: 18 }); }
+  if (!pts.length && !mapState.fitted) map.setView([0, 0], 2);
+}
+function drawSketch() {
+  const cv = $("#sketch"); if (!cv) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const ink = col("--ink"), ink2 = col("--ink-2"), line = col("--line"), card = col("--card"), paper = col("--paper");
+  const cps = all("checkpoints").filter(hasLoc), spots = fanOffsets(runnerSpots());
+  const geo = cps.map(c => ({ lat: +c.lat, lng: +c.lng })).concat(spots, gps.pos ? [gps.pos] : []);
+  ctx.fillStyle = card; ctx.fillRect(0, 0, W, H);
+  if (!geo.length) { ctx.fillStyle = ink2; ctx.font = `13px ${col("--f-body")}`; ctx.fillText("No checkpoint locations yet", 16, 28); return; }
+  const lat0 = geo.reduce((s, p) => s + p.lat, 0) / geo.length, lng0 = geo.reduce((s, p) => s + p.lng, 0) / geo.length, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+  const M = p => [(p.lng - lng0) * kx, (p.lat - lat0) * ky];
+  const ms = geo.map(M), x0 = Math.min(...ms.map(p => p[0])), x1 = Math.max(...ms.map(p => p[0])), y0 = Math.min(...ms.map(p => p[1])), y1 = Math.max(...ms.map(p => p[1]));
+  const pad = 56, s = Math.min((W - pad * 2) / Math.max(x1 - x0, 300), (H - pad * 2) / Math.max(y1 - y0, 300)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const P = p => { const [x, y] = M(p); return [W / 2 + (x - cx) * s, H / 2 - (y - cy) * s]; };
+  const step = s * 100 < 14 ? 500 : 100;
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = Math.floor((cx - W / 2 / s) / step) * step; x < cx + W / 2 / s; x += step) { const px = Math.round(W / 2 + (x - cx) * s) + .5; ctx.moveTo(px, 0); ctx.lineTo(px, H); }
+  for (let y = Math.floor((cy - H / 2 / s) / step) * step; y < cy + H / 2 / s; y += step) { const py = Math.round(H / 2 - (y - cy) * s) + .5; ctx.moveTo(0, py); ctx.lineTo(W, py); }
+  ctx.stroke();
+  // each checkpoint gets a loop drawn to its lap length, start line at the square
+  for (const c of cps) {
+    const [x, y] = P(c), rr = Math.max(14, (c.km * 1000 / (2 * Math.PI)) * s);
+    ctx.strokeStyle = ink2; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y - rr, rr, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = ink; ctx.fillRect(x - 7, y - 7, 14, 14); ctx.strokeStyle = card; ctx.lineWidth = 2; ctx.strokeRect(x - 7, y - 7, 14, 14);
+    ctx.font = `600 12px ${col("--f-body")}`; const lbl = `${c.name} · ${c.km} km`, tw = ctx.measureText(lbl).width, lx = Math.max(8, Math.min(x - tw / 2, W - tw - 12));
+    const nAt = spots.filter(p => p.key === "cp:" + c.id).length, ly = y + (nAt ? Math.max(26, nAt * 5.5) + 34 : 26); ctx.fillStyle = ink; ctx.fillRect(lx - 4, ly - 13, tw + 8, 18); ctx.fillStyle = paper; ctx.fillText(lbl, lx, ly);
+  }
+  for (const sp of spots) {
+    const [bx, by] = P(sp), x = bx + sp.dx, y = by + sp.dy, r = sp.m.id === Store.meId ? 17 : 13, src = sp.m.photo;
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = ink; ctx.fill(); ctx.clip();
+    const im = src && loadImg(src);
+    if (im && im.complete && im.naturalWidth) { ctx.filter = "grayscale(1)"; ctx.drawImage(im, x - r, y - r, r * 2, r * 2); ctx.filter = "none"; }
+    else { ctx.fillStyle = paper; ctx.font = `900 ${r}px ${col("--f-display")}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials(sp.m), x, y + 1); }
+    ctx.restore(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.strokeStyle = sp.m.id === Store.meId ? ink : card; ctx.lineWidth = sp.m.id === Store.meId ? 3 : 2; ctx.stroke();
+  }
+  if (gps.pos) { const [x, y] = P(gps.pos); ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fillStyle = "#2a6fdb"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.stroke(); }
+  const sb = step === 500 ? 500 : 100, sbw = sb * s;
+  ctx.fillStyle = ink; ctx.fillRect(14, H - 20, sbw, 3); ctx.fillRect(14, H - 26, 1.5, 9); ctx.fillRect(14 + sbw - 1.5, H - 26, 1.5, 9);
+  ctx.font = `11px ${col("--f-mono")}`; ctx.textAlign = "left"; ctx.fillText(sb + " m", 18 + sbw, H - 16);
+  ctx.beginPath(); ctx.moveTo(W - 22, 16); ctx.lineTo(W - 28, 32); ctx.lineTo(W - 22, 28); ctx.lineTo(W - 16, 32); ctx.closePath(); ctx.fill(); ctx.fillText("N", W - 26, 46);
+}
+function loadImg(src) { let im = mapState.imgs[src]; if (!im) { im = mapState.imgs[src] = new Image(); im.onload = () => drawSketch(); im.src = src; } return im; }
+
+function viewRunner() {
+  const m = me();
+  const groups = all("groups").sort((a, b) => a.name.localeCompare(b.name));
+  const stats = memberStats(), cps = all("checkpoints").sort((a, b) => a.name.localeCompare(b.name));
+  const del = (col, id) => confirmDel === col + ":" + id
+    ? `<span class="inline-confirm">Delete?<button class="btn sm" data-del="${col}:${id}">Delete</button><button class="btn link" data-act="del-cancel">Keep</button></span>`
+    : `<button class="btn link" data-ask="${col}:${id}">Remove</button>`;
+  const scanBtn = f => nfc.supported ? `<button type="button" class="btn sm ghost" data-scanfor="${f}">${nfc.pendingField === f ? "Hold tag to phone…" : "Scan tag"}</button>` : "";
+  const cnt = gid => all("members").filter(x => x.groupId === gid).length;
+  const ev = event();
+  const toLocal = ts => { if (!ts) return ""; const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
+  return `<section class="section">
+    <h2>Runner</h2>
+    ${m ? `<div class="profile">
+      <button type="button" class="photo-btn" data-act="photo">${avatar(m, "xl")}<small>${m.photo ? "Change photo" : "Add photo"}</small></button>
+      <form data-form="profile"><span class="label">Your profile</span>
+        <label class="field"><span class="label">Name</span><input type="text" id="pName" required maxlength="30" value="${esc(m.name || "")}"></label>
+        <label class="field"><span class="label">Group (optional)</span><select id="pGroup"><option value="">No group</option>${groups.map(g => `<option value="${g.id}" ${g.id === m.groupId ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
+        <div class="row"><button class="btn" type="submit">Save profile</button>${m.photo ? `<button type="button" class="btn link" data-act="photo-remove">Remove photo</button>` : ""}</div></form></div>`
+    : joinCard()}
+  </section>
+  <section class="section">
+    <div class="sec-head"><h3>All runners</h3><span class="label">${stats.length}</span></div>
+    ${stats.length ? `<ul class="list">${stats.map(s => `<li><span class="main">${avatar(s.mem)}<span><b>${esc(nameOf(s.mem))}${s.mem.id === Store.meId ? " (you)" : ""}</b><span class="muted small">${esc(groupName(s.mem.groupId) || "No group")}</span></span></span>
+      <span class="stat num">${s.laps} lap${s.laps === 1 ? "" : "s"}<br>${fmtKm(s.km)} km</span>${Store.admin && s.mem.id !== Store.meId ? del("members", s.mem.id) : ""}</li>`).join("")}</ul>` : `<p class="muted">Nobody has joined yet.</p>`}
+  </section>
+  <section class="section">
+    <details class="add" id="dGroups"><summary>Groups (optional) · ${groups.length}</summary><div class="body">
+      <p class="muted small">Groups are optional. Runners pick one in their profile, and the leaderboard adds a groups view.</p>
+      <form data-form="group" class="row" style="flex-wrap:nowrap"><input type="text" id="gName" required placeholder="New group, e.g. Dawn Patrol" maxlength="30"><button class="btn" type="submit">Create</button></form>
+      ${groups.length ? `<ul class="list">${groups.map(g => `<li><span class="main"><span><b>${esc(g.name)}</b><span class="muted small">${cnt(g.id)} runner${cnt(g.id) === 1 ? "" : "s"}</span></span></span>${Store.admin ? del("groups", g.id) : ""}</li>`).join("")}</ul>` : ""}
+    </div></details>
+    ${Store.admin ? `<details class="add" id="dSetup" ${!cps.length && m ? "open" : ""}><summary>Event setup</summary><div class="body">
+      <form data-form="event"><span class="label">Event</span>
+        <div class="grid2"><label class="field"><span class="label">Name</span><input type="text" id="eName" maxlength="40" placeholder="Sunday 10K Social" value="${esc(ev?.name || "")}"></label>
+        <label class="field"><span class="label">Laps count from</span><input type="datetime-local" id="eStart" value="${toLocal(ev?.startsAt)}"></label></div>
+        <div class="row"><button class="btn" type="submit">Save event</button><button type="button" class="btn ghost" data-act="event-now">Start a new event now</button></div>
+        <p class="muted small">Starting a new event resets the leaderboard. Earlier laps stay saved.</p></form>
+      <div class="hr"></div>
+      <span class="label">Checkpoints · ${cps.length}</span>
+      ${cps.length ? `<ul class="list">${cps.map(c => `<li><span class="main"><span><b>${esc(c.name)} · ${c.km} km lap</b><span class="muted small mono">${c.tag ? "Tag " + esc(c.tag) : "No NFC tag"} · ${hasLoc(c) ? (+c.lat).toFixed(5) + ", " + (+c.lng).toFixed(5) : "no location"}</span></span></span>${del("checkpoints", c.id)}</li>`).join("")}</ul>` : ""}
+      <form data-form="cp"><span class="label">Add a checkpoint</span>
+        <div class="grid2"><label class="field"><span class="label">Name</span><input type="text" id="cName" required placeholder="Start arch" maxlength="30"></label>
+        <label class="field"><span class="label">Lap distance (km)</span><input type="number" id="cKm" required min="0.05" max="100" step="0.01" placeholder="2.5"></label></div>
+        <label class="field"><span class="label">Location (latitude, longitude)</span><span class="row" style="flex-wrap:nowrap"><input type="text" id="cLoc" placeholder="13.73135, 100.54135"><button type="button" class="btn sm ghost" data-act="cp-here">Use my location</button></span></label>
+        <label class="field"><span class="label">NFC tag on the checkpoint</span><span class="row" style="flex-wrap:nowrap"><input type="text" id="cTag" placeholder="Scan it, or type its ID">${scanBtn("cTag")}</span></label>
+        <button class="btn" type="submit">Add checkpoint</button>
+        <p class="muted small">Tip: in Google Maps, long-press the spot to copy its coordinates.</p></form>
+      <div class="hr"></div>
+      <form data-form="sim" class="row" style="flex-wrap:nowrap"><input type="text" id="simTag" placeholder="Test a tag ID without NFC"><button class="btn ghost" type="submit">Simulate tap</button></form>
+    </div></details>` : ""}
+    ${Store.mode === "cloud" ? `<button class="btn ghost sm" style="align-self:flex-start" data-act="signout">Sign out</button>` : ""}
+    <p class="muted small">${Store.mode === "cloud" ? `Signed in as ${esc(Store.email)}.` : Store.mode === "demo" ? "You're looking at a sample event." : "No database is connected yet, so this copy keeps its data on this device only."}</p>
+  </section>`;
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.closest("nav.tabs")) { tab = b.dataset.tab; prefs.set("tab", tab); try { history.replaceState(null, "", "#" + tab); } catch {} render(); window.scrollTo(0, 0); return; }
+  if (b.dataset.go) { tab = b.dataset.go; render(); return; }
+  if (b.dataset.kind) { boardKind = b.dataset.kind; render(); return; }
+  if (b.dataset.checkin) { checkIn(b.dataset.checkin, "button"); return; }
+  if (b.dataset.focus) { focusRunner = b.dataset.focus; if (mapState.mode === "tiles") drawLeaflet(); return; }
+  if (b.dataset.ask) { confirmDel = b.dataset.ask; render(); return; }
+  if (b.dataset.del) { const [c, id] = b.dataset.del.split(":"); confirmDel = null;
+    if (c === "groups" && Store.mode !== "cloud") all("members").filter(m => m.groupId === id).forEach(m => Store.put("members", { ...m, groupId: "" }));
+    Store.remove(c, id); return; }
+  if (b.dataset.scanfor) { nfc.pendingField = b.dataset.scanfor; if (!nfc.active) startNfc(); else render(); return; }
+  switch (b.dataset.act) {
+    case "demo": Store.enterDemo(); mapState.fitted = false; tab = "checkin"; render(); break;
+    case "nfc-start": startNfc(); break;
+    case "auth-toggle": authMode = authMode === "signup" ? "signin" : "signup"; authNote = ""; render(); break;
+    case "auth-reset": { const email = $("#aEmail")?.value.trim(); if (!email) { authNote = "Type your email first, then press Forgot password."; render(); break; }
+      const { error } = await Store.sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); authNote = error ? error.message : "We emailed you a link to set a new password."; render(); break; }
+    case "signout": await Store.sb.auth.signOut(); tab = "checkin"; break;
+    case "nfc-stop": stopNfc(); break;
+    case "photo": pickPhoto(); break;
+    case "photo-remove": { const m = me(); const { photo, ...rest } = m; Store.put("members", rest); break; }
+    case "locate": case "map-locate": { const p = await getPosition(8000); if (!p) toast((gps.err || "Couldn't get your location.") + "");
+      else if (b.dataset.act === "map-locate" && mapState.map) mapState.map.setView([p.lat, p.lng], 17); render(); break; }
+    case "map-fit": mapState.fitted = false; if (mapState.mode === "tiles") drawLeaflet(); else drawSketch(); break;
+    case "dismiss-tag": unknownTag = null; render(); break;
+    case "link-tag": { const id = $("#linkTag")?.value; if (!id) return; const cp = Store.data.checkpoints[id]; Store.put("checkpoints", { ...cp, tag: unknownTag }); toast(`Tag linked to ${cp.name}.`); unknownTag = null; break; }
+    case "del-cancel": confirmDel = null; render(); break;
+    case "event-now": { const ev = event(); Store.put("event", { name: ev?.name || "Running Commu event", startsAt: Date.now() }); toast("New event started. The leaderboard is reset."); break; }
+    case "cp-here": { const p = await getPosition(8000); if (p) { $("#cLoc").value = p.lat.toFixed(6) + ", " + p.lng.toFixed(6); toast(`Location set (within ${Math.round(p.acc)} m).`); }
+      else toast("Location isn't available here. Type the coordinates instead, for example from Google Maps."); break; }
+  }
+});
+document.addEventListener("input", e => { if (e.target.id && e.target.closest("#view")) e.target.dataset.dirty = ""; });
+document.addEventListener("submit", e => {
+  e.preventDefault();
+  const f = e.target.dataset.form, v = id => $("#" + id)?.value.trim() || "";
+  if (f === "auth") { const email = v("aEmail"), password = $("#aPass").value; authBusy = true; authNote = ""; render();
+    (authMode === "signup" ? Store.sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }) : Store.sb.auth.signInWithPassword({ email, password }))
+      .then(({ data, error }) => { authBusy = false;
+        if (error) authNote = /invalid login/i.test(error.message) ? "That email and password don't match. Try again, or reset your password." : /fetch|network/i.test(error.message) ? "Can't reach the server. Check your connection and try again." : error.message;
+        else if (authMode === "signup" && !data.session) { authNote = "Almost done. Open the link we emailed you, then sign in here."; authMode = "signin"; }
+        render(); });
+    return; }
+  if (f === "newpass") { Store.sb.auth.updateUser({ password: $("#nPass").value }).then(({ error }) => { if (error) toast(error.message); else { Store.recovery = false; toast("Password saved."); render(); } }); return; }
+  if (f === "join") { if (!v("jName")) return; Store.put("members", { id: Store.meId, name: v("jName"), groupId: v("jGroup"), ...(draftPhoto ? { photo: draftPhoto } : {}), joined: Date.now() }); draftPhoto = null; toast("You're in. Tap the checkpoint tag to log your first lap."); }
+  if (f === "profile") { const m = me(); Store.put("members", { ...m, name: v("pName") || m.name, groupId: v("pGroup") }); toast("Profile saved."); }
+  if (f === "group") { if (!v("gName")) return; Store.put("groups", { name: v("gName") }); $("#gName").value = ""; toast("Group created."); }
+  if (f === "event") { const t = v("eStart") ? new Date(v("eStart")).getTime() : (event()?.startsAt || Date.now()); Store.put("event", { id: event()?.id, name: v("eName") || "Running Commu event", startsAt: t }); toast("Event saved."); }
+  if (f === "cp") { const km = parseFloat(v("cKm")); if (!v("cName") || !(km > 0)) return;
+    const ll = v("cLoc").split(/[,\s]+/).map(Number).filter(Number.isFinite);
+    if (v("cLoc") && (ll.length !== 2 || Math.abs(ll[0]) > 90 || Math.abs(ll[1]) > 180)) { toast("Location should look like 13.73135, 100.54135."); return; }
+    Store.put("checkpoints", { name: v("cName"), km, tag: v("cTag") ? normTag(v("cTag")) || v("cTag") : "", ...(ll.length === 2 ? { lat: ll[0], lng: ll[1] } : {}) });
+    toast(`${v("cName")} added.`); ["cName", "cKm", "cLoc", "cTag"].forEach(id => $("#" + id).value = ""); }
+  if (f === "sim") { const t = v("simTag"); if (!t) return; handleTagId(t.startsWith("rc:") ? t : normTag(t) || t, "nfc"); }
+});
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (mapState.mode === "sketch") drawSketch(); else mapState.map?.invalidateSize(); }, 120); });
+const redrawTheme = () => { if (mapState.mode === "sketch") drawSketch(); else if (mapState.tiles) { const dark = getComputedStyle(document.documentElement).colorScheme === "dark"; mapState.tiles.setUrl(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`); } };
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", redrawTheme);
+new MutationObserver(redrawTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+$("#exitDemo").addEventListener("click", () => { Store.exitDemo(); mapState.fitted = false; });
+document.fonts?.ready?.then(() => { if (tab === "map" && mapState.mode === "sketch") drawSketch(); });
+
+render();
+Store.init().then(() => { if (prefs.get("nfcOn") && nfc.supported && me()) startNfc(); });
+})();
+</script>
+</body>
+</html>
